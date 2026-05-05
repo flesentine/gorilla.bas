@@ -1133,10 +1133,9 @@ function createBuildingLayer(building, options = {}) {
     drawRegionAnchoredTo(layerCtx, roofDetails[0], localX + building.width / 2, localY - 4, 0.32);
   }
 
-  // Final structural cleanup: remove tiny floating debris, but keep it optional so a
-  // cleanup failure never aborts the full frame or makes unrelated buildings disappear.
-  if (cleanup) {
-    removeFloatingBuildingIslands(layerCtx, localX - 3, localY - 6, building.width + 6, building.height + 12);
+  // Keep cleanup gentle: the pixel-art facade has intentional transparent trim
+  // seams, so full island removal can erase intact upper floors on hosted builds.
+  if (cleanup && building.topBroken) {
     scrubIsolatedPixels(layerCtx, localX - 4, localY - 10, building.width + 8, Math.min(building.height + 16, 180));
   }
 
