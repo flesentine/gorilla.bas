@@ -28,7 +28,7 @@ const gorillaScale = 0.44;
 const actionScale = 0.54;
 const velocityMax = 130;
 const shotStartOffset = { x: 34, y: -40 };
-const assetVersion = "20260505b";
+const assetVersion = "20260505d";
 const assetUrl = (path) => `${path}?v=${assetVersion}`;
 const spriteSheet = new Image();
 spriteSheet.src = assetUrl("assets/gorilla-atlas.png");
@@ -64,6 +64,9 @@ let shake = 0;
 let lastTime = 0;
 let pendingWinner = null;
 let roundResetQueued = false;
+let audioCtx = null;
+let bananaWhoosh = null;
+let hornCooldown = 2400;
 
 const shotDefaults = {
   angle: Number(ui.angle.value),
@@ -83,6 +86,188 @@ function resetAllShotSettingsToDefaults() {
 }
 
 let syncingShotControls = false;
+
+function getAudioContext() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!audioCtx) audioCtx = new AudioContextClass();
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+}
+
+function playTone(frequency, duration = 0.16, type = "square", volume = 0.08, delay = 0) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const start = ctx.currentTime + delay;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+function playNoise(duration = 0.18, volume = 0.16, delay = 0, lowpass = 1800) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const start = ctx.currentTime + delay;
+  const sampleCount = Math.max(1, Math.floor(ctx.sampleRate * duration));
+  const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let i = 0; i < sampleCount; i += 1) {
+    const t = 1 - i / sampleCount;
+    samples[i] = (Math.random() * 2 - 1) * t * t;
+  }
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(lowpass, start);
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start(start);
+}
+
+function playRoar(variant = 0) {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  const start = ctx.currentTime;
+  const duration = 0.42 + variant * 0.08;
+  const base = 78 - variant * 8;
+  const osc = ctx.createOscillator();
+  const mod = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  const shaper = ctx.createWaveShaper();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  const curve = new Float32Array(512);
+  for (let i = 0; i < curve.length; i += 1) {
+    const x = (i / (curve.length - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * 3.4);
+  }
+
+  osc.type = variant % 2 ? "sawtooth" : "square";
+  osc.frequency.setValueAtTime(base, start);
+  osc.frequency.exponentialRampToValueAtTime(base * 0.58, start + duration);
+  mod.type = "sine";
+  mod.frequency.setValueAtTime(18 + variant * 5, start);
+  modGain.gain.setValueAtTime(18 + variant * 5, start);
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(520, start);
+  filter.frequency.exponentialRampToValueAtTime(260, start + duration);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(0.11, start + 0.035);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+  mod.connect(modGain);
+  modGain.connect(osc.frequency);
+  osc.connect(shaper);
+  shaper.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(start);
+  mod.start(start);
+  osc.stop(start + duration + 0.03);
+  mod.stop(start + duration + 0.03);
+  playNoise(duration * 0.72, 0.045, 0.03, 420);
+}
+
+function playHorn() {
+  const variant = Math.floor(random() * 3);
+  const first = [440, 520, 392][variant];
+  const second = [554, 660, 494][variant];
+  playTone(first, 0.12, "square", 0.035);
+  playTone(second, 0.14, "square", 0.03, 0.13);
+}
+
+function startBananaWhoosh() {
+  const ctx = getAudioContext();
+  if (!ctx || bananaWhoosh) return;
+  const noiseLength = Math.floor(ctx.sampleRate * 0.18);
+  const buffer = ctx.createBuffer(1, noiseLength, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < noiseLength; i += 1) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const source = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+  source.buffer = buffer;
+  source.loop = true;
+  filter.type = "bandpass";
+  filter.frequency.setValueAtTime(920, ctx.currentTime);
+  filter.Q.setValueAtTime(0.8, ctx.currentTime);
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.035, ctx.currentTime + 0.04);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  source.start();
+  bananaWhoosh = { source, filter, gain };
+}
+
+function updateBananaWhoosh() {
+  if (!bananaWhoosh || !banana || !audioCtx) return;
+  const speed = Math.hypot(banana.vx, banana.vy);
+  const t = audioCtx.currentTime;
+  bananaWhoosh.filter.frequency.setTargetAtTime(520 + speed * 155, t, 0.04);
+  bananaWhoosh.gain.gain.setTargetAtTime(Math.min(0.07, 0.018 + speed * 0.006), t, 0.04);
+}
+
+function stopBananaWhoosh() {
+  if (!bananaWhoosh || !audioCtx) {
+    bananaWhoosh = null;
+    return;
+  }
+  const { source, gain } = bananaWhoosh;
+  const t = audioCtx.currentTime;
+  gain.gain.cancelScheduledValues(t);
+  gain.gain.setTargetAtTime(0.0001, t, 0.025);
+  try {
+    source.stop(t + 0.12);
+  } catch (error) {
+    // Already stopped.
+  }
+  bananaWhoosh = null;
+}
+
+function playSfx(name, intensity = 1) {
+  try {
+    if (name === "windup") {
+      playTone(150, 0.06, "square", 0.035);
+      playTone(220, 0.08, "square", 0.035, 0.055);
+      if (random() > 0.55) playRoar(0);
+    } else if (name === "throw") {
+      playTone(520, 0.08, "triangle", 0.055);
+      playTone(780, 0.10, "square", 0.045, 0.055);
+    } else if (name === "boom") {
+      playNoise(0.32, 0.15 + Math.min(0.14, intensity * 0.001), 0, 1250);
+      playTone(82, 0.22, "sawtooth", 0.075);
+    } else if (name === "hit") {
+      playTone(120, 0.09, "square", 0.08);
+      playTone(74, 0.16, "sawtooth", 0.08, 0.06);
+      playRoar(1 + Math.floor(random() * 2));
+    } else if (name === "collapse") {
+      playNoise(0.52, 0.24, 0, 620);
+      playNoise(0.28, 0.13, 0.16, 1600);
+      playTone(56, 0.28, "sawtooth", 0.07);
+    }
+  } catch (error) {
+    // Sound is ornamental; never let audio support interrupt play.
+  }
+}
 
 function saveCurrentShotSettings() {
   if (syncingShotControls || !playerShotSettings[currentPlayer]) return;
@@ -1244,6 +1429,7 @@ function resetRound(keepScore = true) {
 
   makeClouds();
   makeCars();
+  stopBananaWhoosh();
   banana = null;
   explosions = [];
   fallingRoofDetails = [];
@@ -1365,7 +1551,7 @@ function segmentIntersectsRect(x1, y1, x2, y2, rect, padding = 0) {
 }
 
 function simulatedBananaStillLeavingThrower(age, x, y, launchX, launchY) {
-  return age < 34 || Math.hypot(x - launchX, y - launchY) < 74;
+  return age < 24 && Math.hypot(x - launchX, y - launchY) < 74;
 }
 
 function simulatedBuildingHit(prevX, prevY, x, y) {
@@ -1745,6 +1931,13 @@ function drawSky(dt) {
 
 function updateCars(dt) {
   if (!cars.length) return;
+  if (audioCtx) {
+    hornCooldown -= dt;
+    if (hornCooldown <= 0) {
+      hornCooldown = 2400 + random() * 5200;
+      if (random() > 0.35) playHorn();
+    }
+  }
   cars.forEach((car) => {
     car.x += (car.speed * dt) / 1000;
     car.phase += dt / 130;
@@ -2082,11 +2275,14 @@ function launchPendingBanana(player) {
     launchY: player.y + shotStartOffset.y,
     age: 0,
   };
+  playSfx("throw");
+  startBananaWhoosh();
   setStatus(`${player.name} lets it rip.`);
 }
 
 function throwBanana() {
   if (locked || pendingWinner !== null) return;
+  getAudioContext();
   saveCurrentShotSettings();
   locked = true;
   updateUi();
@@ -2100,6 +2296,7 @@ function throwBanana() {
   player.renderY = player.y;
   player.released = false;
   player.pendingShot = { angle, speed };
+  playSfx("windup");
   setStatus(`${player.name} winds up...`);
 }
 
@@ -2115,6 +2312,7 @@ function updateShot(dt) {
     banana.vy += gravity;
     banana.spin += 0.13 * Math.sign(banana.vx || 1);
     banana.age += 1;
+    updateBananaWhoosh();
     if (checkCollision()) break;
   }
 }
@@ -2128,7 +2326,7 @@ function bananaLaunchDistance() {
 
 function bananaIsStillLeavingThrower() {
   if (!banana) return false;
-  return banana.age < 34 || bananaLaunchDistance() < 74;
+  return banana.age < 24 && bananaLaunchDistance() < 74;
 }
 
 function checkCollision() {
@@ -2179,6 +2377,7 @@ function checkCollision() {
 function explode(x, y, size) {
   explosions.push({ x, y, size, life: 520, max: 520 });
   shake = 10;
+  playSfx("boom", size);
 }
 
 function maybeTearDownHitGorillaBuilding(targetIndex, impactX, impactY, impactVx) {
@@ -2207,6 +2406,7 @@ function maybeTearDownHitGorillaBuilding(targetIndex, impactX, impactY, impactVx
   const collapsed = collapseBuildingTop(player.buildingIndex, collapseAmount);
   if (collapsed) {
     emitPuffs(player.x, player.y - 8, 5, 28, 24, 12, 420);
+    playSfx("collapse");
     shake = Math.max(shake, 12);
   }
   return collapsed;
@@ -2216,7 +2416,9 @@ function hit(targetIndex) {
   const impactX = banana.x;
   const impactY = banana.y;
   const impactVx = banana.vx;
+  stopBananaWhoosh();
   explode(impactX, impactY, 92);
+  playSfx("hit");
   banana = null;
   locked = true;
   updateUi();
@@ -2230,6 +2432,7 @@ function hit(targetIndex) {
 
 function miss(reason = null) {
   const player = players[currentPlayer];
+  stopBananaWhoosh();
   banana = null;
   currentPlayer = currentPlayer === 0 ? 1 : 0;
   locked = false;
