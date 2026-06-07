@@ -2735,7 +2735,12 @@ function drawHudTrajectory() {
   ctx.restore();
 }
 
+function isCompactMobileLayout() {
+  return window.matchMedia("(max-height: 560px) and (orientation: landscape), (max-width: 720px)").matches;
+}
+
 function drawOverlayText() {
+  if (isCompactMobileLayout()) return;
   ctx.font = "900 22px Trebuchet MS, Arial";
   ctx.fillStyle = "#110a1b";
   ctx.fillText("BANANA BLITZ DX", 24, 36);
