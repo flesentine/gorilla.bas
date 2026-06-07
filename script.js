@@ -10,12 +10,31 @@ const ui = {
   velocityOut: document.querySelector("#velocityOut"),
   status: document.querySelector("#status"),
   wind: document.querySelector("#windReadout"),
+  p1Name: document.querySelector("#p1Name"),
+  p2Name: document.querySelector("#p2Name"),
   p1Score: document.querySelector("#p1Score"),
   p2Score: document.querySelector("#p2Score"),
   round: document.querySelector("#roundLabel"),
+  modeToggle: document.querySelector("#modeToggle"),
   aimToggle: document.querySelector("#aimToggle"),
+  soundToggle: document.querySelector("#soundToggle"),
   throwButton: document.querySelector("#throwButton"),
   newRoundButton: document.querySelector("#newRoundButton"),
+  menuButton: document.querySelector("#menuButton"),
+  pauseOverlay: document.querySelector("#pauseOverlay"),
+  resumeButton: document.querySelector("#resumeButton"),
+  menuAimToggle: document.querySelector("#menuAimToggle"),
+  menuSoundToggle: document.querySelector("#menuSoundToggle"),
+  menuNewRoundButton: document.querySelector("#menuNewRoundButton"),
+  menuModeToggle: document.querySelector("#menuModeToggle"),
+  touchTutorial: document.querySelector("#touchTutorial"),
+  tutorialGotIt: document.querySelector("#tutorialGotIt"),
+  hudP1Score: document.querySelector("#hudP1Score"),
+  hudP2Score: document.querySelector("#hudP2Score"),
+  hudP2Name: document.querySelector("#hudP2Name"),
+  hudWind: document.querySelector("#hudWind"),
+  hudAngle: document.querySelector("#hudAngle"),
+  hudVelocity: document.querySelector("#hudVelocity"),
 };
 
 const W = canvas.width;
@@ -28,6 +47,13 @@ const gorillaScale = 0.44;
 const actionScale = 0.54;
 const velocityMax = 130;
 const shotStartOffset = { x: 34, y: -40 };
+const touchAngleSensitivity = 0.22;
+const touchVelocitySensitivity = 0.26;
+const pointerFireThreshold = 8;
+const aiMercyAttempts = 2;
+const aimAssistStorageKey = "bananaBlitzAimAssist";
+const soundStorageKey = "bananaBlitzSoundOn";
+const touchTutorialStorageKey = "bananaBlitzTouchTutorialSeen";
 const assetVersion = "20260505d";
 const assetUrl = (path) => `${path}?v=${assetVersion}`;
 const spriteSheet = new Image();
@@ -66,7 +92,20 @@ let pendingWinner = null;
 let roundResetQueued = false;
 let audioCtx = null;
 let bananaWhoosh = null;
+let soundOn = true;
+let touchTutorialSeen = false;
+let pauseMenuOpen = false;
 let hornCooldown = 2400;
+let singlePlayer = true;
+let aiTurnTimer = null;
+let aiThinking = false;
+
+const aiPlayerIndex = 1;
+const aiShotMemory = {
+  attempts: 0,
+  lastShot: null,
+  lastMissDistance: Infinity,
+};
 
 const shotDefaults = {
   angle: Number(ui.angle.value),
@@ -87,7 +126,48 @@ function resetAllShotSettingsToDefaults() {
 
 let syncingShotControls = false;
 
+const pointerAim = {
+  isAiming: false,
+  pointerId: null,
+  startClientX: 0,
+  startClientY: 0,
+  currentClientX: 0,
+  currentClientY: 0,
+  startAngle: 0,
+  startVelocity: 0,
+  movedEnoughToFire: false,
+};
+
+canvas.style.touchAction = "none";
+
+function isLikelyTouchDevice() {
+  return navigator.maxTouchPoints > 0 || /iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+}
+
+function getTurnPrompt(playerName) {
+  return isLikelyTouchDevice()
+    ? `${playerName}: Drag to aim. Release to throw.`
+    : `${playerName}, set angle and velocity.`;
+}
+
+function setStorageValue(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch (error) {
+    // Storage errors should never interrupt play.
+  }
+}
+
+function getStorageValue(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (error) {
+    return null;
+  }
+}
+
 function getAudioContext() {
+  if (!soundOn) return null;
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return null;
   if (!audioCtx) audioCtx = new AudioContextClass();
@@ -98,6 +178,7 @@ function getAudioContext() {
 }
 
 function playTone(frequency, duration = 0.16, type = "square", volume = 0.08, delay = 0) {
+  if (!soundOn) return;
   const ctx = getAudioContext();
   if (!ctx) return;
   const start = ctx.currentTime + delay;
@@ -115,6 +196,7 @@ function playTone(frequency, duration = 0.16, type = "square", volume = 0.08, de
 }
 
 function playNoise(duration = 0.18, volume = 0.16, delay = 0, lowpass = 1800) {
+  if (!soundOn) return;
   const ctx = getAudioContext();
   if (!ctx) return;
   const start = ctx.currentTime + delay;
@@ -140,6 +222,7 @@ function playNoise(duration = 0.18, volume = 0.16, delay = 0, lowpass = 1800) {
 }
 
 function playRoar(variant = 0) {
+  if (!soundOn) return;
   const ctx = getAudioContext();
   if (!ctx) return;
   const start = ctx.currentTime;
@@ -185,6 +268,7 @@ function playRoar(variant = 0) {
 }
 
 function playHorn() {
+  if (!soundOn) return;
   const variant = Math.floor(random() * 3);
   const first = [440, 520, 392][variant];
   const second = [554, 660, 494][variant];
@@ -193,6 +277,7 @@ function playHorn() {
 }
 
 function startBananaWhoosh() {
+  if (!soundOn) return;
   const ctx = getAudioContext();
   if (!ctx || bananaWhoosh) return;
   const noiseLength = Math.floor(ctx.sampleRate * 0.18);
@@ -244,6 +329,7 @@ function stopBananaWhoosh() {
 }
 
 function playSfx(name, intensity = 1) {
+  if (!soundOn) return;
   try {
     if (name === "windup") {
       playTone(150, 0.06, "square", 0.035);
@@ -286,6 +372,231 @@ function loadCurrentShotSettings() {
 function handleShotInput() {
   saveCurrentShotSettings();
   updateUi();
+}
+
+function isAiTurn() {
+  return singlePlayer && currentPlayer === aiPlayerIndex && pendingWinner === null;
+}
+
+function canHumanAim() {
+  const player = players[currentPlayer];
+  return !locked
+    && !banana
+    && pendingWinner === null
+    && !isAiTurn()
+    && !aiThinking
+    && Boolean(player)
+    && player.state === "ready";
+}
+
+function getPointerWorldPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) * (canvas.width / rect.width),
+    y: (event.clientY - rect.top) * (canvas.height / rect.height),
+  };
+}
+
+function capturePointer(pointerId) {
+  if (!canvas.setPointerCapture) return;
+  try {
+    canvas.setPointerCapture(pointerId);
+  } catch (error) {
+    // Pointer capture is helpful but optional.
+  }
+}
+
+function releasePointer(pointerId = pointerAim.pointerId) {
+  if (pointerId === null || !canvas.releasePointerCapture) return;
+  try {
+    canvas.releasePointerCapture(pointerId);
+  } catch (error) {
+    // The browser may have already released capture.
+  }
+}
+
+function clearPointerAim({ releaseCapture = true } = {}) {
+  const pointerId = pointerAim.pointerId;
+  if (releaseCapture) releasePointer(pointerId);
+  pointerAim.isAiming = false;
+  pointerAim.pointerId = null;
+  pointerAim.startClientX = 0;
+  pointerAim.startClientY = 0;
+  pointerAim.currentClientX = 0;
+  pointerAim.currentClientY = 0;
+  pointerAim.startAngle = 0;
+  pointerAim.startVelocity = 0;
+  pointerAim.movedEnoughToFire = false;
+}
+
+function setShotControls(angle, velocity) {
+  ui.angle.value = clamp(angle, Number(ui.angle.min), Number(ui.angle.max));
+  ui.velocity.value = clamp(velocity, Number(ui.velocity.min), Number(ui.velocity.max));
+  saveCurrentShotSettings();
+  updateUi();
+}
+
+function updatePointerAimFromEvent(event) {
+  const player = players[currentPlayer];
+  if (!player) return;
+  const dx = event.clientX - pointerAim.startClientX;
+  const dy = event.clientY - pointerAim.startClientY;
+  const dragDistance = Math.hypot(dx, dy);
+  const velocityDirection = player.side === 1 ? 1 : -1;
+  const angle = pointerAim.startAngle - dy * touchAngleSensitivity;
+  const velocity = pointerAim.startVelocity + dx * velocityDirection * touchVelocitySensitivity;
+  pointerAim.currentClientX = event.clientX;
+  pointerAim.currentClientY = event.clientY;
+  pointerAim.movedEnoughToFire = dragDistance >= pointerFireThreshold;
+  setShotControls(angle, velocity);
+}
+
+function beginPointerAim(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (pointerAim.isAiming || !canHumanAim()) return;
+  event.preventDefault();
+  pointerAim.isAiming = true;
+  pointerAim.pointerId = event.pointerId;
+  pointerAim.startClientX = event.clientX;
+  pointerAim.startClientY = event.clientY;
+  pointerAim.currentClientX = event.clientX;
+  pointerAim.currentClientY = event.clientY;
+  pointerAim.startAngle = Number(ui.angle.value);
+  pointerAim.startVelocity = Number(ui.velocity.value);
+  pointerAim.movedEnoughToFire = false;
+  capturePointer(event.pointerId);
+}
+
+function updatePointerAim(event) {
+  if (!pointerAim.isAiming || event.pointerId !== pointerAim.pointerId) return;
+  event.preventDefault();
+  if (!canHumanAim()) {
+    clearPointerAim();
+    return;
+  }
+  updatePointerAimFromEvent(event);
+}
+
+function endPointerAim(event) {
+  if (!pointerAim.isAiming || event.pointerId !== pointerAim.pointerId) return;
+  event.preventDefault();
+  if (canHumanAim()) updatePointerAimFromEvent(event);
+  saveCurrentShotSettings();
+  const shouldFire = pointerAim.movedEnoughToFire && canHumanAim();
+  clearPointerAim();
+  if (shouldFire) {
+    dismissTouchTutorial();
+    throwBanana();
+  }
+}
+
+function cancelPointerAim(event) {
+  if (!pointerAim.isAiming || event.pointerId !== pointerAim.pointerId) return;
+  event.preventDefault();
+  clearPointerAim();
+}
+
+function loadAimAssistPreference() {
+  const saved = getStorageValue(aimAssistStorageKey);
+  if (saved === "true") aimAssistOn = true;
+  else if (saved === "false") aimAssistOn = false;
+  else if (isLikelyTouchDevice()) aimAssistOn = true;
+}
+
+function saveAimAssistPreference() {
+  setStorageValue(aimAssistStorageKey, String(aimAssistOn));
+}
+
+function loadSoundPreference() {
+  const saved = getStorageValue(soundStorageKey);
+  if (saved === "true") soundOn = true;
+  if (saved === "false") soundOn = false;
+}
+
+function saveSoundPreference() {
+  setStorageValue(soundStorageKey, String(soundOn));
+}
+
+function loadTouchTutorialPreference() {
+  touchTutorialSeen = getStorageValue(touchTutorialStorageKey) === "true";
+}
+
+function showTouchTutorialIfNeeded() {
+  if (!isLikelyTouchDevice() || touchTutorialSeen || !ui.touchTutorial) return;
+  ui.touchTutorial.classList.add("is-visible");
+  ui.touchTutorial.setAttribute("aria-hidden", "false");
+}
+
+function dismissTouchTutorial() {
+  if (touchTutorialSeen) return;
+  touchTutorialSeen = true;
+  setStorageValue(touchTutorialStorageKey, "true");
+  if (!ui.touchTutorial) return;
+  ui.touchTutorial.classList.remove("is-visible");
+  ui.touchTutorial.setAttribute("aria-hidden", "true");
+}
+
+function setPauseMenuOpen(open) {
+  pauseMenuOpen = open;
+  ui.pauseOverlay.classList.toggle("is-open", pauseMenuOpen);
+  ui.pauseOverlay.setAttribute("aria-hidden", String(!pauseMenuOpen));
+  ui.menuButton.setAttribute("aria-expanded", String(pauseMenuOpen));
+}
+
+function toggleAimAssist() {
+  aimAssistOn = !aimAssistOn;
+  saveAimAssistPreference();
+  updateUi();
+}
+
+function toggleSound() {
+  soundOn = !soundOn;
+  if (!soundOn) stopBananaWhoosh();
+  saveSoundPreference();
+  updateUi();
+}
+
+function startNewRoundFromControl() {
+  if (locked) return;
+  setPauseMenuOpen(false);
+  clearPointerAim();
+  clearAiTurnTimer();
+  aiThinking = false;
+  round += 1;
+  resetRound(true);
+}
+
+function toggleModeFromControl() {
+  clearPointerAim();
+  singlePlayer = !singlePlayer;
+  clearAiTurnTimer();
+  aiThinking = false;
+  resetAiShotMemory();
+  updatePlayerNames();
+  updateUi();
+  setStatus(getTurnPrompt(players[currentPlayer].name));
+  maybeQueueAiTurn();
+}
+
+function clearAiTurnTimer() {
+  if (aiTurnTimer) {
+    clearTimeout(aiTurnTimer);
+    aiTurnTimer = null;
+  }
+}
+
+function resetAiShotMemory() {
+  aiShotMemory.attempts = 0;
+  aiShotMemory.lastShot = null;
+  aiShotMemory.lastMissDistance = Infinity;
+}
+
+function randomBetween(min, max) {
+  return min + random() * (max - min);
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
 
@@ -422,6 +733,8 @@ function makeCity() {
       topBroken: false,
       holes: [],
       damageMarks: [],
+      renderCache: null,
+      renderCacheDirty: true,
       skylineRole: height > 270 ? "hero" : height < 125 ? "low" : "normal",
     });
     x += width;
@@ -429,11 +742,23 @@ function makeCity() {
   }
 }
 
+function markBuildingDirty(building) {
+  if (!building) return;
+  building.renderCache = null;
+  building.renderCacheDirty = true;
+}
+
+function markAllBuildingsDirty() {
+  buildings.forEach(markBuildingDirty);
+}
+
 function makePlayers() {
   const leftSpot = pickPlayerRoof(40, 320);
   const rightSpot = pickPlayerRoof(W - 320, W - 40);
   leftSpot.building.roof = "flat";
   rightSpot.building.roof = "flat";
+  markBuildingDirty(leftSpot.building);
+  markBuildingDirty(rightSpot.building);
   players = [
     {
       x: leftSpot.x,
@@ -788,6 +1113,7 @@ function addBuildingDamage(hit, impactVx = 0) {
 
   if (building.holes.length > 18) building.holes.splice(0, building.holes.length - 18);
   building.damageMarks = [];
+  markBuildingDirty(building);
   maybeReleaseRoofDetail(building);
   maybeCollapseBuilding(hit.index);
 }
@@ -920,6 +1246,7 @@ function emitPuffs(x, y, count = 3, size = 24, spreadX = 16, spreadY = 8, life =
 function releaseRoofDetail(building, placement) {
   if (!building || building.roofDetailGone || !placement) return;
   building.roofDetailGone = true;
+  markBuildingDirty(building);
   fallingRoofDetails.push({
     x: placement.x,
     y: placement.y,
@@ -1031,6 +1358,7 @@ function collapseBuildingTop(index, collapseAmount) {
     });
   }
   if (building.holes.length > 22) building.holes.splice(0, building.holes.length - 22);
+  markBuildingDirty(building);
 
   if (oldPlacement) releaseRoofDetail(building, oldPlacement);
 
@@ -1329,6 +1657,19 @@ function createBuildingLayer(building, options = {}) {
   return { layer, padX, padTop, padBottom };
 }
 
+function getBuildingRenderLayer(building) {
+  if (!building.renderCache || building.renderCacheDirty) {
+    try {
+      building.renderCache = createBuildingLayer(building, { cleanup: true });
+    } catch (error) {
+      console.error("Building render cleanup failed; using safe fallback", error, building);
+      building.renderCache = createBuildingLayer(building, { cleanup: false });
+    }
+    building.renderCacheDirty = false;
+  }
+  return building.renderCache;
+}
+
 function spawnFallingBuildingChunk(building, collapseAmount) {
   if (!spritesReady || collapseAmount <= 0) return;
   const oldLayer = createBuildingLayer(building, { cleanup: false });
@@ -1424,6 +1765,9 @@ function topAt(x) {
 }
 
 function resetRound(keepScore = true) {
+  clearPointerAim();
+  clearAiTurnTimer();
+  aiThinking = false;
   seed = (Date.now() + round * 733) % 999999;
   generatePlayableRound();
 
@@ -1440,25 +1784,56 @@ function resetRound(keepScore = true) {
   pendingWinner = null;
   roundResetQueued = false;
   resetAllShotSettingsToDefaults();
+  resetAiShotMemory();
+  updatePlayerNames();
   loadCurrentShotSettings();
   updateUi();
-  setStatus(`${players[currentPlayer].name}, set angle and velocity.`);
+  setStatus(getTurnPrompt(players[currentPlayer].name));
+  maybeQueueAiTurn();
 }
 
 function setStatus(text) {
   ui.status.textContent = text;
 }
 
+function updatePlayerNames() {
+  if (!players.length) return;
+  players[0].name = "Player 1";
+  players[1].name = singlePlayer ? "Computer" : "Player 2";
+}
+
 function updateUi() {
+  const computerTurn = isAiTurn() || aiThinking;
   ui.angleOut.value = ui.angle.value;
   ui.velocityOut.value = ui.velocity.value;
   ui.wind.textContent = `${wind > 0 ? "Wind ->" : "Wind <-"} ${Math.abs(wind).toFixed(1)}`;
+  ui.p1Name.textContent = "P1";
+  ui.p2Name.textContent = singlePlayer ? "CPU" : "P2";
   ui.p1Score.textContent = scores[0];
   ui.p2Score.textContent = scores[1];
   ui.round.textContent = `Round ${round}`;
-  ui.aimToggle.textContent = aimAssistOn ? "Aim Dots On" : "Aim Dots Off";
+  ui.modeToggle.textContent = singlePlayer ? "Mode: 1P" : "Mode: 2P";
+  ui.modeToggle.setAttribute("aria-pressed", String(singlePlayer));
+  ui.aimToggle.textContent = aimAssistOn ? "Aim Preview On" : "Aim Preview Off";
   ui.aimToggle.setAttribute("aria-pressed", String(aimAssistOn));
-  ui.throwButton.disabled = locked;
+  ui.soundToggle.textContent = soundOn ? "Sound On" : "Sound Off";
+  ui.soundToggle.setAttribute("aria-pressed", String(soundOn));
+  ui.menuAimToggle.textContent = aimAssistOn ? "Aim Preview On" : "Aim Preview Off";
+  ui.menuAimToggle.setAttribute("aria-pressed", String(aimAssistOn));
+  ui.menuSoundToggle.textContent = soundOn ? "Sound On" : "Sound Off";
+  ui.menuSoundToggle.setAttribute("aria-pressed", String(soundOn));
+  ui.menuModeToggle.textContent = singlePlayer ? "Mode: 1P" : "Mode: 2P";
+  ui.menuModeToggle.setAttribute("aria-pressed", String(singlePlayer));
+  ui.menuNewRoundButton.disabled = locked;
+  ui.hudP1Score.textContent = scores[0];
+  ui.hudP2Score.textContent = scores[1];
+  ui.hudP2Name.textContent = singlePlayer ? "CPU" : "P2";
+  ui.hudWind.textContent = `${wind > 0 ? "->" : "<-"} ${Math.abs(wind).toFixed(1)}`;
+  ui.hudAngle.textContent = ui.angle.value;
+  ui.hudVelocity.textContent = ui.velocity.value;
+  ui.angle.disabled = computerTurn;
+  ui.velocity.disabled = computerTurn;
+  ui.throwButton.disabled = locked || computerTurn;
 }
 
 function drawPixelRect(x, y, w, h, color) {
@@ -1601,6 +1976,141 @@ function shotHitsPlayer(shooterIndex, targetIndex, angleValue, velocityValue) {
   return false;
 }
 
+function simulateShot(shooterIndex, targetIndex, angleValue, velocityValue) {
+  const shooter = players[shooterIndex];
+  const target = players[targetIndex];
+  if (!shooter || !target) return { hit: false, closestDistance: Infinity, blocked: true };
+
+  const angle = angleValue * Math.PI / 180;
+  const speed = velocityValue * throwScale;
+  const launchX = shooter.x + shooter.side * shotStartOffset.x;
+  const launchY = shooter.y + shotStartOffset.y;
+  let x = launchX;
+  let y = launchY;
+  let vx = Math.cos(angle) * speed * shooter.side;
+  let vy = -Math.sin(angle) * speed;
+  const targetBox = getGorillaHitBox(target);
+  const targetCenter = {
+    x: (targetBox.left + targetBox.right) / 2,
+    y: (targetBox.top + targetBox.bottom) / 2,
+  };
+  const ownerBuildingIndex = shooter.buildingIndex;
+  let closestDistance = Infinity;
+
+  for (let tick = 0; tick < 1200; tick += 1) {
+    const prevX = x;
+    const prevY = y;
+    x += vx;
+    y += vy;
+    vx += wind * windScale;
+    vy += gravity;
+
+    const distance = Math.hypot(x - targetCenter.x, y - targetCenter.y);
+    closestDistance = Math.min(closestDistance, distance);
+    if (segmentIntersectsRect(prevX, prevY, x, y, targetBox, 7)) {
+      return { hit: true, closestDistance: 0, blocked: false };
+    }
+    if (x < -90 || x > W + 90 || y > H + 90) {
+      return { hit: false, closestDistance, blocked: false };
+    }
+
+    const buildingHit = simulatedBuildingHit(prevX, prevY, x, y);
+    if (buildingHit) {
+      const leavingThrower = simulatedBananaStillLeavingThrower(tick, x, y, launchX, launchY);
+      if (leavingThrower && buildingHit.index === ownerBuildingIndex) {
+        continue;
+      }
+      return { hit: false, closestDistance, blocked: true };
+    }
+
+    if (y >= groundY) return { hit: false, closestDistance, blocked: false };
+  }
+
+  return { hit: false, closestDistance, blocked: false };
+}
+
+function findAiBaseShot(shooterIndex) {
+  const targetIndex = shooterIndex === 0 ? 1 : 0;
+  const options = [];
+
+  for (let velocity = 30; velocity <= velocityMax; velocity += 5) {
+    for (let angle = 5; angle <= 89; angle += 2) {
+      const result = simulateShot(shooterIndex, targetIndex, angle, velocity);
+      options.push({ angle, velocity, ...result });
+    }
+  }
+
+  options.sort((a, b) => {
+    if (a.hit !== b.hit) return a.hit ? -1 : 1;
+    if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
+    return a.closestDistance - b.closestDistance;
+  });
+
+  const topCount = options[0]?.hit ? 12 : 8;
+  const pick = options[Math.floor(random() * Math.min(topCount, options.length))];
+  return pick || { angle: 45, velocity: 70, closestDistance: Infinity };
+}
+
+function chooseAiShot() {
+  const base = findAiBaseShot(aiPlayerIndex);
+  const targetIndex = 0;
+  const target = players[targetIndex];
+  const shooter = players[aiPlayerIndex];
+  const distanceFactor = shooter && target ? clamp(Math.abs(shooter.x - target.x) / W, 0.35, 0.9) : 0.65;
+  const learnFactor = clamp(aiShotMemory.attempts, 0, 4);
+  const mercyActive = aiShotMemory.attempts < aiMercyAttempts;
+  const lucky = !mercyActive && random() < 0.12 + learnFactor * 0.04;
+  const wildGuess = random() < Math.max(0.1, 0.3 - learnFactor * 0.04);
+  const angleNoise = (lucky ? 1.2 : 7.5 + distanceFactor * 8.5) / (1 + learnFactor * 0.18);
+  const velocityNoise = (lucky ? 2.5 : 13 + distanceFactor * 15) / (1 + learnFactor * 0.14);
+  let angle = base.angle + randomBetween(-angleNoise, angleNoise);
+  let velocity = base.velocity + randomBetween(-velocityNoise, velocityNoise);
+
+  if (!mercyActive && aiShotMemory.lastShot && aiShotMemory.lastMissDistance < 150 && random() < 0.58) {
+    angle = aiShotMemory.lastShot.angle + (base.angle - aiShotMemory.lastShot.angle) * randomBetween(0.35, 0.7);
+    velocity = aiShotMemory.lastShot.velocity + (base.velocity - aiShotMemory.lastShot.velocity) * randomBetween(0.35, 0.7);
+    angle += randomBetween(-3.8, 3.8);
+    velocity += randomBetween(-7.5, 7.5);
+  }
+
+  if (wildGuess) {
+    angle += randomBetween(-11, 11);
+    velocity += randomBetween(-18, 18);
+  }
+
+  angle = Math.round(clamp(angle, Number(ui.angle.min), Number(ui.angle.max)));
+  velocity = Math.round(clamp(velocity, Number(ui.velocity.min), Number(ui.velocity.max)));
+
+  let result = simulateShot(aiPlayerIndex, targetIndex, angle, velocity);
+  if (mercyActive && result.hit) {
+    let bestMiss = null;
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const candidateAngle = Math.round(clamp(base.angle + randomBetween(-12, 12), Number(ui.angle.min), Number(ui.angle.max)));
+      const candidateVelocity = Math.round(clamp(base.velocity + randomBetween(-22, 22), Number(ui.velocity.min), Number(ui.velocity.max)));
+      const candidate = simulateShot(aiPlayerIndex, targetIndex, candidateAngle, candidateVelocity);
+      if (!candidate.hit && !candidate.blocked) {
+        if (!bestMiss || candidate.closestDistance < bestMiss.closestDistance) {
+          bestMiss = { angle: candidateAngle, velocity: candidateVelocity, ...candidate };
+        }
+      }
+    }
+    if (bestMiss) {
+      angle = bestMiss.angle;
+      velocity = bestMiss.velocity;
+      result = bestMiss;
+    } else {
+      angle = Math.round(clamp(angle + randomBetween(5, 9) * (random() < 0.5 ? -1 : 1), Number(ui.angle.min), Number(ui.angle.max)));
+      velocity = Math.round(clamp(velocity + randomBetween(10, 16) * (random() < 0.5 ? -1 : 1), Number(ui.velocity.min), Number(ui.velocity.max)));
+      result = simulateShot(aiPlayerIndex, targetIndex, angle, velocity);
+    }
+  }
+  aiShotMemory.attempts += 1;
+  aiShotMemory.lastShot = { angle, velocity };
+  aiShotMemory.lastMissDistance = result.closestDistance;
+
+  return { angle, velocity };
+}
+
 function playerHasShot(shooterIndex) {
   const targetIndex = shooterIndex === 0 ? 1 : 0;
 
@@ -1638,7 +2148,8 @@ function softenSkylineForPlayability() {
     if (playerBuildingIndexes.has(index)) {
       building.roof = "flat";
       building.damageMarks = [];
-        building.holes = [];
+      building.holes = [];
+      markBuildingDirty(building);
       return;
     }
 
@@ -1654,7 +2165,8 @@ function softenSkylineForPlayability() {
       building.y = groundY - building.height;
       building.roof = random() > 0.72 ? "antenna" : "flat";
       building.damageMarks = [];
-        building.holes = [];
+      building.holes = [];
+      markBuildingDirty(building);
     }
 
     if ((closeToLeftLaunch || closeToRightLaunch) && building.y < highestPlayerRoofY + 44) {
@@ -1663,7 +2175,8 @@ function softenSkylineForPlayability() {
       building.y = groundY - building.height;
       building.roof = "flat";
       building.damageMarks = [];
-        building.holes = [];
+      building.holes = [];
+      markBuildingDirty(building);
     }
   });
 }
@@ -1695,7 +2208,8 @@ function addSkylineDramaAwayFromLaunchLanes() {
     building.y = groundY - building.height;
     building.roof = random() > 0.45 ? building.roof : (random() > 0.5 ? "antenna" : "tank");
     building.damageMarks = [];
-        building.holes = [];
+    building.holes = [];
+    markBuildingDirty(building);
   });
 }
 
@@ -1730,6 +2244,7 @@ function clearLaunchBlockers() {
         building.damageMarks = [];
         building.holes = [];
         building.skylineRole = "launch-clear";
+        markBuildingDirty(building);
       }
     });
   });
@@ -1973,15 +2488,8 @@ function drawTraffic(dt) {
 
 function drawBuildings() {
   buildings.forEach((b, index) => {
-    const sections = getBuildingSections(b);
     if (spritesReady) {
-      let rendered;
-      try {
-        rendered = createBuildingLayer(b, { cleanup: true });
-      } catch (error) {
-        console.error("Building render cleanup failed; using safe fallback", error, b);
-        rendered = createBuildingLayer(b, { cleanup: false });
-      }
+      const rendered = getBuildingRenderLayer(b);
       ctx.drawImage(rendered.layer, Math.round(b.x - rendered.padX), Math.round(b.y - rendered.padTop));
       return;
     }
@@ -2200,15 +2708,23 @@ function drawExplosions(dt) {
 }
 
 function drawHudTrajectory() {
-  if (locked || !aimAssistOn) return;
+  if (locked || !aimAssistOn || isAiTurn() || aiThinking) return;
   const p = players[currentPlayer];
+  if (!p) return;
   const angle = Number(ui.angle.value) * Math.PI / 180;
   const speed = Number(ui.velocity.value) * throwScale;
   let vx = Math.cos(angle) * speed * p.side;
   let vy = -Math.sin(angle) * speed;
-  let x = p.x + p.side * 30;
-  let y = p.y - 34;
+  let x = p.x + p.side * shotStartOffset.x;
+  let y = p.y + shotStartOffset.y;
+  ctx.save();
   ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = "#fff8d8";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + vx * 10, y + vy * 10);
+  ctx.stroke();
   for (let i = 0; i < 55; i++) {
     if (i % 6 === 0) drawPixelRect(x, y, 4, 4, "#fff8d8");
     x += vx * 4;
@@ -2216,7 +2732,7 @@ function drawHudTrajectory() {
     vx += wind * windScale * 4;
     vy += gravity * 4;
   }
-  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 function drawOverlayText() {
@@ -2257,6 +2773,33 @@ function render(time = 0) {
   requestAnimationFrame(render);
 }
 
+function maybeQueueAiTurn() {
+  clearAiTurnTimer();
+  if (!isAiTurn() || locked || aiThinking) return;
+
+  aiThinking = true;
+  updateUi();
+  setStatus("Computer is sizing up the skyline...");
+
+  aiTurnTimer = setTimeout(() => {
+    aiTurnTimer = null;
+    if (!isAiTurn() || locked || pendingWinner !== null) {
+      aiThinking = false;
+      updateUi();
+      return;
+    }
+
+    const shot = chooseAiShot();
+    ui.angle.value = shot.angle;
+    ui.velocity.value = shot.velocity;
+    playerShotSettings[aiPlayerIndex].angle = shot.angle;
+    playerShotSettings[aiPlayerIndex].velocity = shot.velocity;
+    aiThinking = false;
+    updateUi();
+    throwBanana(shot);
+  }, 650 + random() * 950);
+}
+
 function launchPendingBanana(player) {
   if (!player.pendingShot) return;
   const shot = player.pendingShot;
@@ -2280,10 +2823,19 @@ function launchPendingBanana(player) {
   setStatus(`${player.name} lets it rip.`);
 }
 
-function throwBanana() {
+function throwBanana(shotOverride = null) {
   if (locked || pendingWinner !== null) return;
+  if (isAiTurn() && !shotOverride) return;
   getAudioContext();
-  saveCurrentShotSettings();
+  if (shotOverride) {
+    ui.angle.value = shotOverride.angle;
+    ui.velocity.value = shotOverride.velocity;
+    playerShotSettings[currentPlayer].angle = shotOverride.angle;
+    playerShotSettings[currentPlayer].velocity = shotOverride.velocity;
+  } else {
+    saveCurrentShotSettings();
+  }
+  clearPointerAim();
   locked = true;
   updateUi();
   const player = players[currentPlayer];
@@ -2401,6 +2953,7 @@ function maybeTearDownHitGorillaBuilding(targetIndex, impactX, impactY, impactVx
     seed: Math.floor((player.x * 29 + impactY * 37 + round * 431) % 100000),
     hits: 2,
   });
+  markBuildingDirty(building);
 
   const collapseAmount = 18 + random() * 12 + Math.min(6, Math.abs(impactVx) * 1.5);
   const collapsed = collapseBuildingTop(player.buildingIndex, collapseAmount);
@@ -2416,6 +2969,7 @@ function hit(targetIndex) {
   const impactX = banana.x;
   const impactY = banana.y;
   const impactVx = banana.vx;
+  clearPointerAim();
   stopBananaWhoosh();
   explode(impactX, impactY, 92);
   playSfx("hit");
@@ -2432,17 +2986,21 @@ function hit(targetIndex) {
 
 function miss(reason = null) {
   const player = players[currentPlayer];
+  clearPointerAim();
   stopBananaWhoosh();
   banana = null;
   currentPlayer = currentPlayer === 0 ? 1 : 0;
   locked = false;
+  aiThinking = false;
   loadCurrentShotSettings();
   updateUi();
   if (reason) {
     setStatus(`${reason} ${players[currentPlayer].name}, your throw.`);
+    maybeQueueAiTurn();
     return;
   }
   setStatus(`${player.name} missed. ${players[currentPlayer].name}, your throw.`);
+  maybeQueueAiTurn();
 }
 
 ui.form.addEventListener("submit", (event) => {
@@ -2451,21 +3009,64 @@ ui.form.addEventListener("submit", (event) => {
 });
 
 ui.newRoundButton.addEventListener("click", () => {
-  if (locked) return;
-  round += 1;
-  resetRound(true);
+  startNewRoundFromControl();
+});
+
+ui.modeToggle.addEventListener("click", () => {
+  toggleModeFromControl();
 });
 
 ui.aimToggle.addEventListener("click", () => {
-  aimAssistOn = !aimAssistOn;
-  updateUi();
+  toggleAimAssist();
+});
+
+ui.soundToggle.addEventListener("click", () => {
+  toggleSound();
+});
+
+ui.menuButton.addEventListener("click", () => {
+  setPauseMenuOpen(!pauseMenuOpen);
+});
+
+ui.resumeButton.addEventListener("click", () => {
+  setPauseMenuOpen(false);
+});
+
+ui.menuAimToggle.addEventListener("click", () => {
+  toggleAimAssist();
+});
+
+ui.menuSoundToggle.addEventListener("click", () => {
+  toggleSound();
+});
+
+ui.menuNewRoundButton.addEventListener("click", () => {
+  startNewRoundFromControl();
+});
+
+ui.menuModeToggle.addEventListener("click", () => {
+  toggleModeFromControl();
+});
+
+ui.pauseOverlay.addEventListener("click", (event) => {
+  if (event.target === ui.pauseOverlay) setPauseMenuOpen(false);
+});
+
+ui.tutorialGotIt.addEventListener("click", () => {
+  dismissTouchTutorial();
 });
 
 [ui.angle, ui.velocity].forEach((input) => {
   input.addEventListener("input", handleShotInput);
 });
 
+canvas.addEventListener("pointerdown", beginPointerAim);
+canvas.addEventListener("pointermove", updatePointerAim);
+canvas.addEventListener("pointerup", endPointerAim);
+canvas.addEventListener("pointercancel", cancelPointerAim);
+
 window.addEventListener("keydown", (event) => {
+  if (isAiTurn() || aiThinking) return;
   if (event.key === "Enter") throwBanana();
   if (event.key === "ArrowLeft") ui.angle.value = Math.max(Number(ui.angle.min), Number(ui.angle.value) - 1);
   if (event.key === "ArrowRight") ui.angle.value = Math.min(Number(ui.angle.max), Number(ui.angle.value) + 1);
@@ -2477,5 +3078,9 @@ window.addEventListener("keydown", (event) => {
   updateUi();
 });
 
+loadSoundPreference();
+loadAimAssistPreference();
+loadTouchTutorialPreference();
 resetRound(false);
+showTouchTutorialIfNeeded();
 requestAnimationFrame(render);

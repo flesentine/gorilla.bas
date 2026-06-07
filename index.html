@@ -2,15 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Banana Blitz DX</title>
-    <link rel="stylesheet" href="styles.css?v=20260505d" />
+    <link rel="stylesheet" href="styles.css?v=20260607b" />
   </head>
   <body>
     <main class="cabinet">
       <section class="stage" aria-label="Banana Blitz DX game">
         <canvas id="game" width="960" height="540"></canvas>
         <div class="scanlines" aria-hidden="true"></div>
+        <div class="mobile-hud" aria-hidden="true">
+          <div class="hud-chip hud-p1"><span>P1</span><strong id="hudP1Score">0</strong></div>
+          <div class="hud-chip hud-wind"><span>Wind</span><strong id="hudWind">0</strong></div>
+          <div class="hud-chip hud-p2"><span id="hudP2Name">CPU</span><strong id="hudP2Score">0</strong></div>
+          <div class="hud-chip hud-aim"><span>Aim</span><strong><span id="hudAngle">45</span> / <span id="hudVelocity">70</span></strong></div>
+        </div>
+        <button id="menuButton" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false">Menu</button>
       </section>
 
       <aside class="panel" aria-label="Game controls">
@@ -42,7 +49,9 @@
             <output id="velocityOut" for="velocity">70</output>
           </label>
 
-          <button id="aimToggle" type="button" aria-pressed="false">Aim Dots Off</button>
+          <button id="modeToggle" type="button" aria-pressed="true">Mode: 1P</button>
+          <button id="aimToggle" type="button" aria-pressed="false">Aim Preview Off</button>
+          <button id="soundToggle" type="button" aria-pressed="true">Sound On</button>
           <button id="throwButton" type="submit">Throw Banana</button>
           <button id="newRoundButton" type="button">New Skyline</button>
         </form>
@@ -50,7 +59,26 @@
         <p id="status" class="status">Player 1, set angle and velocity.</p>
       </aside>
     </main>
+    <div id="pauseOverlay" class="pause-overlay" aria-hidden="true">
+      <div class="pause-menu" role="dialog" aria-modal="true" aria-label="Game menu">
+        <button id="resumeButton" type="button">Resume</button>
+        <button id="menuAimToggle" type="button" aria-pressed="false">Aim Preview Off</button>
+        <button id="menuSoundToggle" type="button" aria-pressed="true">Sound On</button>
+        <button id="menuNewRoundButton" type="button">New Skyline</button>
+        <button id="menuModeToggle" type="button" aria-pressed="true">Mode: 1P</button>
+      </div>
+    </div>
+    <div id="touchTutorial" class="touch-tutorial" aria-hidden="true">
+      <div class="tutorial-card" role="dialog" aria-label="Touch aiming">
+        <p>Drag anywhere to aim</p>
+        <p>Up/down changes angle</p>
+        <p>Toward enemy changes power</p>
+        <p>Release to throw</p>
+        <button id="tutorialGotIt" type="button">Got it</button>
+      </div>
+    </div>
+    <div class="rotate-warning" aria-hidden="true">Rotate your phone to play</div>
 
-    <script src="script.js?v=20260505d"></script>
+    <script src="script.js?v=20260607b"></script>
   </body>
 </html>
