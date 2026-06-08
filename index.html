@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Banana Blitz DX</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23070b1f'/%3E%3Cpath d='M15 39c15 14 36 6 39-16-5 9-18 17-35 9-4 1-6 4-4 7z' fill='%23ffcf46'/%3E%3Cpath d='M17 35c11 8 26 5 34-9' fill='none' stroke='%23fff8d8' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='17' cy='38' r='4' fill='%236b3a21'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=20260607c" />
+    <link rel="stylesheet" href="styles.css?v=20260607d" />
   </head>
   <body>
     <main class="cabinet">
@@ -16,7 +16,23 @@
           <div class="hud-chip hud-p1"><span>P1</span><strong id="hudP1Score">0</strong></div>
           <div class="hud-chip hud-wind"><span>Wind</span><strong id="hudWind">0</strong></div>
           <div class="hud-chip hud-p2"><span id="hudP2Name">CPU</span><strong id="hudP2Score">0</strong></div>
-          <div class="hud-chip hud-aim"><span>Aim</span><strong><span id="hudAngle">45</span> / <span id="hudVelocity">70</span></strong></div>
+          <div class="hud-shot" aria-hidden="true">
+            <div class="shot-readout">
+              <div class="shot-stat">
+                <span>Angle</span>
+                <strong><span id="hudAngle">45</span>°</strong>
+              </div>
+              <div class="shot-divider" aria-hidden="true">↗</div>
+              <div class="shot-stat">
+                <span>Power</span>
+                <strong><span id="hudVelocity">70</span></strong>
+              </div>
+            </div>
+            <div class="power-meter" aria-hidden="true">
+              <div id="hudPowerFill" class="power-fill"></div>
+            </div>
+            <div id="hudHint" class="shot-hint">Drag anywhere to aim</div>
+          </div>
         </div>
         <button id="menuButton" class="menu-button" type="button" aria-haspopup="true" aria-expanded="false">Menu</button>
       </section>
@@ -80,6 +96,6 @@
     </div>
     <div class="rotate-warning" aria-hidden="true">Rotate your phone to play</div>
 
-    <script src="script.js?v=20260607c"></script>
+    <script src="script.js?v=20260607d"></script>
   </body>
 </html>

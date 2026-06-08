@@ -35,6 +35,8 @@ const ui = {
   hudWind: document.querySelector("#hudWind"),
   hudAngle: document.querySelector("#hudAngle"),
   hudVelocity: document.querySelector("#hudVelocity"),
+  hudPowerFill: document.querySelector("#hudPowerFill"),
+  hudHint: document.querySelector("#hudHint"),
 };
 
 const W = canvas.width;
@@ -465,6 +467,7 @@ function beginPointerAim(event) {
   pointerAim.startVelocity = Number(ui.velocity.value);
   pointerAim.movedEnoughToFire = false;
   capturePointer(event.pointerId);
+  updateUi();
 }
 
 function updatePointerAim(event) {
@@ -472,6 +475,7 @@ function updatePointerAim(event) {
   event.preventDefault();
   if (!canHumanAim()) {
     clearPointerAim();
+    updateUi();
     return;
   }
   updatePointerAimFromEvent(event);
@@ -487,6 +491,8 @@ function endPointerAim(event) {
   if (shouldFire) {
     dismissTouchTutorial();
     throwBanana();
+  } else {
+    updateUi();
   }
 }
 
@@ -494,6 +500,7 @@ function cancelPointerAim(event) {
   if (!pointerAim.isAiming || event.pointerId !== pointerAim.pointerId) return;
   event.preventDefault();
   clearPointerAim();
+  updateUi();
 }
 
 function loadAimAssistPreference() {
@@ -1806,7 +1813,7 @@ function updateUi() {
   const computerTurn = isAiTurn() || aiThinking;
   ui.angleOut.value = ui.angle.value;
   ui.velocityOut.value = ui.velocity.value;
-  ui.wind.textContent = `${wind > 0 ? "Wind ->" : "Wind <-"} ${Math.abs(wind).toFixed(1)}`;
+  ui.wind.textContent = `${wind < 0 ? "Wind <-" : "Wind ->"} ${Math.abs(wind).toFixed(1)}`;
   ui.p1Name.textContent = "P1";
   ui.p2Name.textContent = singlePlayer ? "CPU" : "P2";
   ui.p1Score.textContent = scores[0];
@@ -1828,9 +1835,21 @@ function updateUi() {
   ui.hudP1Score.textContent = scores[0];
   ui.hudP2Score.textContent = scores[1];
   ui.hudP2Name.textContent = singlePlayer ? "CPU" : "P2";
-  ui.hudWind.textContent = `${wind > 0 ? "->" : "<-"} ${Math.abs(wind).toFixed(1)}`;
+  ui.hudWind.textContent = `${wind < 0 ? "<-" : "->"} ${Math.abs(wind).toFixed(1)}`;
   ui.hudAngle.textContent = ui.angle.value;
   ui.hudVelocity.textContent = ui.velocity.value;
+  if (ui.hudPowerFill) {
+    const minVelocity = Number(ui.velocity.min);
+    const maxVelocity = Number(ui.velocity.max);
+    const velocity = Number(ui.velocity.value);
+    const powerPct = ((velocity - minVelocity) / (maxVelocity - minVelocity)) * 100;
+    ui.hudPowerFill.style.width = `${clamp(powerPct, 0, 100)}%`;
+  }
+  if (ui.hudHint) {
+    ui.hudHint.textContent = pointerAim.isAiming
+      ? "Release to throw"
+      : canHumanAim() ? "Drag anywhere to aim" : "";
+  }
   ui.angle.disabled = computerTurn;
   ui.velocity.disabled = computerTurn;
   ui.throwButton.disabled = locked || computerTurn;
@@ -2430,8 +2449,11 @@ function drawSky(dt) {
   drawMoon(768, 68, 0.72);
 
   clouds.forEach((cloud) => {
-    cloud.x += (cloud.speed * dt) / 1000;
-    if (cloud.x > W + 80) cloud.x = -100;
+    const cloudDirection = wind < 0 ? -1 : 1;
+    const windVisualBoost = 0.75 + Math.min(0.9, Math.abs(wind) * 0.35);
+    cloud.x += (cloud.speed * cloudDirection * windVisualBoost * dt) / 1000;
+    if (cloud.x > W + 100) cloud.x = -120;
+    if (cloud.x < -120) cloud.x = W + 100;
     if (spritesReady) {
       drawSprite(cloud.sprite, cloud.x, cloud.y, cloud.scale * 0.55, 1, 0.72);
     } else {
