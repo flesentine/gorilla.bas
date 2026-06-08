@@ -201,6 +201,7 @@ let singlePlayer = true;
 let difficultyKey = "normal";
 let aiTurnTimer = null;
 let aiThinking = false;
+let buildingPixelCleanupEnabled = true;
 
 const aiPlayerIndex = 1;
 const aiShotMemory = {
@@ -1787,10 +1788,18 @@ function createBuildingLayer(building, options = {}) {
     drawRegionAnchoredTo(layerCtx, roofDetails[0], localX + building.width / 2, localY - 4, 0.32);
   }
 
-  // Keep cleanup gentle: the pixel-art facade has intentional transparent trim
-  // seams, so full island removal can erase intact upper floors on hosted builds.
-  if (cleanup && building.topBroken) {
-    scrubIsolatedPixels(layerCtx, localX - 4, localY - 10, building.width + 8, Math.min(building.height + 16, 180));
+  // Keep cleanup gentle and optional. Some local/browser launch paths taint
+  // canvases after sprite draws, which blocks pixel reads but not rendering.
+  if (cleanup && building.topBroken && buildingPixelCleanupEnabled) {
+    try {
+      scrubIsolatedPixels(layerCtx, localX - 4, localY - 10, building.width + 8, Math.min(building.height + 16, 180));
+    } catch (error) {
+      if (error && error.name === "SecurityError") {
+        buildingPixelCleanupEnabled = false;
+      } else {
+        throw error;
+      }
+    }
   }
 
   return { layer, padX, padTop, padBottom };
