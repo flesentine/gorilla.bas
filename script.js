@@ -16,6 +16,7 @@ const ui = {
   p2Score: document.querySelector("#p2Score"),
   round: document.querySelector("#roundLabel"),
   modeToggle: document.querySelector("#modeToggle"),
+  difficultyToggle: document.querySelector("#difficultyToggle"),
   aimToggle: document.querySelector("#aimToggle"),
   soundToggle: document.querySelector("#soundToggle"),
   throwButton: document.querySelector("#throwButton"),
@@ -25,6 +26,7 @@ const ui = {
   resumeButton: document.querySelector("#resumeButton"),
   menuAimToggle: document.querySelector("#menuAimToggle"),
   menuSoundToggle: document.querySelector("#menuSoundToggle"),
+  menuDifficultyToggle: document.querySelector("#menuDifficultyToggle"),
   menuNewRoundButton: document.querySelector("#menuNewRoundButton"),
   menuModeToggle: document.querySelector("#menuModeToggle"),
   touchTutorial: document.querySelector("#touchTutorial"),
@@ -53,10 +55,106 @@ const shotStartOffset = { x: 34, y: -40 };
 const touchAngleSensitivity = 0.22;
 const touchVelocitySensitivity = 0.26;
 const pointerFireThreshold = 8;
-const aiMercyAttempts = 2;
+const difficultyStorageKey = "bananaBlitzDifficulty";
+const difficultyOrder = ["easy", "normal", "hard", "expert"];
 const aimAssistStorageKey = "bananaBlitzAimAssist";
 const soundStorageKey = "bananaBlitzSoundOn";
 const touchTutorialStorageKey = "bananaBlitzTouchTutorialSeen";
+const difficulties = {
+  easy: {
+    label: "Easy",
+    mercyAttempts: 3,
+    aiTopHitChoices: 22,
+    aiTopMissChoices: 16,
+    angleNoiseBase: 11.5,
+    angleNoiseDistance: 12,
+    velocityNoiseBase: 19,
+    velocityNoiseDistance: 20,
+    learnAngleDivisor: 8,
+    learnVelocityDivisor: 9,
+    luckyBase: 0.04,
+    luckyLearn: 0.025,
+    wildGuessBase: 0.42,
+    wildGuessLearnDrop: 0.045,
+    correctionChance: 0.32,
+    windMin: 0.6,
+    windMax: 1.2,
+    requirePlayableShots: true,
+    skylineDramaScale: 0.72,
+    thinkingMin: 850,
+    thinkingMax: 1700,
+  },
+  normal: {
+    label: "Normal",
+    mercyAttempts: 2,
+    aiTopHitChoices: 12,
+    aiTopMissChoices: 8,
+    angleNoiseBase: 7.5,
+    angleNoiseDistance: 8.5,
+    velocityNoiseBase: 13,
+    velocityNoiseDistance: 15,
+    learnAngleDivisor: 5.55,
+    learnVelocityDivisor: 7.15,
+    luckyBase: 0.12,
+    luckyLearn: 0.04,
+    wildGuessBase: 0.3,
+    wildGuessLearnDrop: 0.04,
+    correctionChance: 0.58,
+    windMin: 1.0,
+    windMax: 1.8,
+    requirePlayableShots: false,
+    skylineDramaScale: 1,
+    thinkingMin: 650,
+    thinkingMax: 1600,
+  },
+  hard: {
+    label: "Hard",
+    mercyAttempts: 1,
+    aiTopHitChoices: 7,
+    aiTopMissChoices: 5,
+    angleNoiseBase: 5.2,
+    angleNoiseDistance: 6.2,
+    velocityNoiseBase: 8.5,
+    velocityNoiseDistance: 10.5,
+    learnAngleDivisor: 4.4,
+    learnVelocityDivisor: 5.4,
+    luckyBase: 0.18,
+    luckyLearn: 0.055,
+    wildGuessBase: 0.18,
+    wildGuessLearnDrop: 0.05,
+    correctionChance: 0.72,
+    windMin: 1.1,
+    windMax: 2.0,
+    requirePlayableShots: false,
+    skylineDramaScale: 1.08,
+    thinkingMin: 480,
+    thinkingMax: 1200,
+  },
+  expert: {
+    label: "Expert",
+    mercyAttempts: 0,
+    aiTopHitChoices: 3,
+    aiTopMissChoices: 3,
+    angleNoiseBase: 2.4,
+    angleNoiseDistance: 3.4,
+    velocityNoiseBase: 4.2,
+    velocityNoiseDistance: 5.6,
+    learnAngleDivisor: 3.3,
+    learnVelocityDivisor: 4,
+    luckyBase: 0.28,
+    luckyLearn: 0.07,
+    wildGuessBase: 0.08,
+    wildGuessLearnDrop: 0.035,
+    correctionChance: 0.84,
+    exactShotChance: 0.22,
+    windMin: 1.2,
+    windMax: 2.2,
+    requirePlayableShots: false,
+    skylineDramaScale: 1.16,
+    thinkingMin: 320,
+    thinkingMax: 900,
+  },
+};
 const assetVersion = "20260505d";
 const assetUrl = (path) => `${path}?v=${assetVersion}`;
 const spriteSheet = new Image();
@@ -100,6 +198,7 @@ let touchTutorialSeen = false;
 let pauseMenuOpen = false;
 let hornCooldown = 2400;
 let singlePlayer = true;
+let difficultyKey = "normal";
 let aiTurnTimer = null;
 let aiThinking = false;
 
@@ -523,6 +622,31 @@ function loadSoundPreference() {
 
 function saveSoundPreference() {
   setStorageValue(soundStorageKey, String(soundOn));
+}
+
+function getDifficulty() {
+  return difficulties[difficultyKey] || difficulties.normal;
+}
+
+function loadDifficultyPreference() {
+  const saved = getStorageValue(difficultyStorageKey);
+  difficultyKey = difficultyOrder.includes(saved) ? saved : "normal";
+}
+
+function saveDifficultyPreference() {
+  setStorageValue(difficultyStorageKey, difficultyKey);
+}
+
+function cycleDifficulty() {
+  const currentIndex = Math.max(0, difficultyOrder.indexOf(difficultyKey));
+  difficultyKey = difficultyOrder[(currentIndex + 1) % difficultyOrder.length];
+  saveDifficultyPreference();
+  resetAiShotMemory();
+  clearAiTurnTimer();
+  aiThinking = false;
+  updateUi();
+  setStatus(`Difficulty: ${getDifficulty().label}.`);
+  maybeQueueAiTurn();
 }
 
 function loadTouchTutorialPreference() {
@@ -1812,6 +1936,7 @@ function updatePlayerNames() {
 
 function updateUi() {
   const computerTurn = isAiTurn() || aiThinking;
+  const difficulty = getDifficulty();
   ui.angleOut.value = ui.angle.value;
   ui.velocityOut.value = ui.velocity.value;
   ui.wind.textContent = `${wind < 0 ? "Wind <-" : "Wind ->"} ${Math.abs(wind).toFixed(1)}`;
@@ -1822,6 +1947,7 @@ function updateUi() {
   ui.round.textContent = `Round ${round}`;
   ui.modeToggle.textContent = singlePlayer ? "Mode: 1P" : "Mode: 2P";
   ui.modeToggle.setAttribute("aria-pressed", String(singlePlayer));
+  ui.difficultyToggle.textContent = `Difficulty: ${difficulty.label}`;
   ui.aimToggle.textContent = aimAssistOn ? "Aim Preview On" : "Aim Preview Off";
   ui.aimToggle.setAttribute("aria-pressed", String(aimAssistOn));
   ui.soundToggle.textContent = soundOn ? "Sound On" : "Sound Off";
@@ -1830,6 +1956,7 @@ function updateUi() {
   ui.menuAimToggle.setAttribute("aria-pressed", String(aimAssistOn));
   ui.menuSoundToggle.textContent = soundOn ? "Sound On" : "Sound Off";
   ui.menuSoundToggle.setAttribute("aria-pressed", String(soundOn));
+  ui.menuDifficultyToggle.textContent = `Difficulty: ${difficulty.label}`;
   ui.menuModeToggle.textContent = singlePlayer ? "Mode: 1P" : "Mode: 2P";
   ui.menuModeToggle.setAttribute("aria-pressed", String(singlePlayer));
   ui.menuNewRoundButton.disabled = locked;
@@ -2051,6 +2178,7 @@ function simulateShot(shooterIndex, targetIndex, angleValue, velocityValue) {
 }
 
 function findAiBaseShot(shooterIndex) {
+  const difficulty = getDifficulty();
   const targetIndex = shooterIndex === 0 ? 1 : 0;
   const options = [];
 
@@ -2067,36 +2195,54 @@ function findAiBaseShot(shooterIndex) {
     return a.closestDistance - b.closestDistance;
   });
 
-  const topCount = options[0]?.hit ? 12 : 8;
+  const topCount = options[0]?.hit ? difficulty.aiTopHitChoices : difficulty.aiTopMissChoices;
   const pick = options[Math.floor(random() * Math.min(topCount, options.length))];
   return pick || { angle: 45, velocity: 70, closestDistance: Infinity };
 }
 
 function chooseAiShot() {
+  const difficulty = getDifficulty();
   const base = findAiBaseShot(aiPlayerIndex);
   const targetIndex = 0;
   const target = players[targetIndex];
   const shooter = players[aiPlayerIndex];
   const distanceFactor = shooter && target ? clamp(Math.abs(shooter.x - target.x) / W, 0.35, 0.9) : 0.65;
   const learnFactor = clamp(aiShotMemory.attempts, 0, 4);
-  const mercyActive = aiShotMemory.attempts < aiMercyAttempts;
-  const lucky = !mercyActive && random() < 0.12 + learnFactor * 0.04;
-  const wildGuess = random() < Math.max(0.1, 0.3 - learnFactor * 0.04);
-  const angleNoise = (lucky ? 1.2 : 7.5 + distanceFactor * 8.5) / (1 + learnFactor * 0.18);
-  const velocityNoise = (lucky ? 2.5 : 13 + distanceFactor * 15) / (1 + learnFactor * 0.14);
+  const mercyActive = aiShotMemory.attempts < difficulty.mercyAttempts;
+  const exactShotChance = difficulty.exactShotChance || 0;
+  if (!mercyActive && base.hit && random() < exactShotChance) {
+    aiShotMemory.attempts += 1;
+    aiShotMemory.lastShot = { angle: base.angle, velocity: base.velocity };
+    aiShotMemory.lastMissDistance = base.closestDistance;
+    return { angle: base.angle, velocity: base.velocity };
+  }
+
+  const lucky = !mercyActive && random() < difficulty.luckyBase + learnFactor * difficulty.luckyLearn;
+  const wildGuessFloor = difficulty.wildGuessBase * 0.33;
+  const wildGuess = random() < Math.max(wildGuessFloor, difficulty.wildGuessBase - learnFactor * difficulty.wildGuessLearnDrop);
+  const angleNoise = (
+    lucky
+      ? difficulty.angleNoiseBase * 0.16
+      : difficulty.angleNoiseBase + distanceFactor * difficulty.angleNoiseDistance
+  ) / (1 + learnFactor / difficulty.learnAngleDivisor);
+  const velocityNoise = (
+    lucky
+      ? difficulty.velocityNoiseBase * 0.19
+      : difficulty.velocityNoiseBase + distanceFactor * difficulty.velocityNoiseDistance
+  ) / (1 + learnFactor / difficulty.learnVelocityDivisor);
   let angle = base.angle + randomBetween(-angleNoise, angleNoise);
   let velocity = base.velocity + randomBetween(-velocityNoise, velocityNoise);
 
-  if (!mercyActive && aiShotMemory.lastShot && aiShotMemory.lastMissDistance < 150 && random() < 0.58) {
+  if (!mercyActive && aiShotMemory.lastShot && aiShotMemory.lastMissDistance < 150 && random() < difficulty.correctionChance) {
     angle = aiShotMemory.lastShot.angle + (base.angle - aiShotMemory.lastShot.angle) * randomBetween(0.35, 0.7);
     velocity = aiShotMemory.lastShot.velocity + (base.velocity - aiShotMemory.lastShot.velocity) * randomBetween(0.35, 0.7);
-    angle += randomBetween(-3.8, 3.8);
-    velocity += randomBetween(-7.5, 7.5);
+    angle += randomBetween(-difficulty.angleNoiseBase * 0.5, difficulty.angleNoiseBase * 0.5);
+    velocity += randomBetween(-difficulty.velocityNoiseBase * 0.58, difficulty.velocityNoiseBase * 0.58);
   }
 
   if (wildGuess) {
-    angle += randomBetween(-11, 11);
-    velocity += randomBetween(-18, 18);
+    angle += randomBetween(-difficulty.angleNoiseBase * 1.45, difficulty.angleNoiseBase * 1.45);
+    velocity += randomBetween(-difficulty.velocityNoiseBase * 1.38, difficulty.velocityNoiseBase * 1.38);
   }
 
   angle = Math.round(clamp(angle, Number(ui.angle.min), Number(ui.angle.max)));
@@ -2106,8 +2252,8 @@ function chooseAiShot() {
   if (mercyActive && result.hit) {
     let bestMiss = null;
     for (let attempt = 0; attempt < 18; attempt += 1) {
-      const candidateAngle = Math.round(clamp(base.angle + randomBetween(-12, 12), Number(ui.angle.min), Number(ui.angle.max)));
-      const candidateVelocity = Math.round(clamp(base.velocity + randomBetween(-22, 22), Number(ui.velocity.min), Number(ui.velocity.max)));
+      const candidateAngle = Math.round(clamp(base.angle + randomBetween(-difficulty.angleNoiseBase * 1.6, difficulty.angleNoiseBase * 1.6), Number(ui.angle.min), Number(ui.angle.max)));
+      const candidateVelocity = Math.round(clamp(base.velocity + randomBetween(-difficulty.velocityNoiseBase * 1.7, difficulty.velocityNoiseBase * 1.7), Number(ui.velocity.min), Number(ui.velocity.max)));
       const candidate = simulateShot(aiPlayerIndex, targetIndex, candidateAngle, candidateVelocity);
       if (!candidate.hit && !candidate.blocked) {
         if (!bestMiss || candidate.closestDistance < bestMiss.closestDistance) {
@@ -2120,8 +2266,8 @@ function chooseAiShot() {
       velocity = bestMiss.velocity;
       result = bestMiss;
     } else {
-      angle = Math.round(clamp(angle + randomBetween(5, 9) * (random() < 0.5 ? -1 : 1), Number(ui.angle.min), Number(ui.angle.max)));
-      velocity = Math.round(clamp(velocity + randomBetween(10, 16) * (random() < 0.5 ? -1 : 1), Number(ui.velocity.min), Number(ui.velocity.max)));
+      angle = Math.round(clamp(angle + randomBetween(difficulty.angleNoiseBase * 0.65, difficulty.angleNoiseBase * 1.15) * (random() < 0.5 ? -1 : 1), Number(ui.angle.min), Number(ui.angle.max)));
+      velocity = Math.round(clamp(velocity + randomBetween(difficulty.velocityNoiseBase * 0.8, difficulty.velocityNoiseBase * 1.25) * (random() < 0.5 ? -1 : 1), Number(ui.velocity.min), Number(ui.velocity.max)));
       result = simulateShot(aiPlayerIndex, targetIndex, angle, velocity);
     }
   }
@@ -2205,6 +2351,7 @@ function softenSkylineForPlayability() {
 
 function addSkylineDramaAwayFromLaunchLanes() {
   if (players.length < 2) return;
+  const dramaScale = getDifficulty().skylineDramaScale;
   const playerBuildingIndexes = new Set(players.map((player) => player.buildingIndex));
   const protectedRanges = players.map((player) => {
     const launchX = player.x + player.side * shotStartOffset.x;
@@ -2221,10 +2368,10 @@ function addSkylineDramaAwayFromLaunchLanes() {
 
     const nearMiddle = 1 - Math.min(1, Math.abs(center - W / 2) / (W / 2));
     const alreadyTall = building.height > 245;
-    const shouldBoost = alreadyTall || random() < 0.13 + nearMiddle * 0.16;
+    const shouldBoost = alreadyTall || random() < (0.13 + nearMiddle * 0.16) * dramaScale;
     if (!shouldBoost) return;
 
-    const boost = 24 + Math.floor(random() * (alreadyTall ? 42 : 82));
+    const boost = Math.round((24 + Math.floor(random() * (alreadyTall ? 42 : 82))) * dramaScale);
     building.height = Math.min(358, building.height + boost);
     building.y = groundY - building.height;
     building.roof = random() > 0.45 ? building.roof : (random() > 0.5 ? "antenna" : "tank");
@@ -2306,20 +2453,21 @@ function launchLanesAreClear() {
 }
 
 function generatePlayableRound() {
-  // Buildings are destroyable now, so do not reject skylines just because
-  // there is not a guaranteed mathematical shot between the gorillas.
-  // Keep only the small launch-lane cleanup so a banana can leave the hand
-  // without instantly detonating on a neighboring wall.
+  // Buildings are destroyable now, so most difficulties keep dramatic skylines.
+  // Easy asks for guaranteed playable shots; everyone still gets the launch-lane
+  // cleanup so a banana can leave the hand cleanly.
+  const difficulty = getDifficulty();
   let attempts = 0;
   while (attempts < 24) {
     makeCity();
     makePlayers();
     const direction = random() > 0.5 ? 1 : -1;
-    wind = direction * (1.0 + Math.round(random() * 8) / 10);
+    const windRange = Math.max(0, difficulty.windMax - difficulty.windMin);
+    wind = direction * (difficulty.windMin + Math.round(random() * windRange * 10) / 10);
     addSkylineDramaAwayFromLaunchLanes();
     clearLaunchBlockers();
     attempts += 1;
-    if (launchLanesAreClear()) return attempts;
+    if (launchLanesAreClear() && (!difficulty.requirePlayableShots || roundHasPlayableShots())) return attempts;
   }
 
   // Last resort: accept the skyline after the local launch cleanup. Do not
@@ -2806,6 +2954,7 @@ function maybeQueueAiTurn() {
   clearAiTurnTimer();
   if (!isAiTurn() || locked || aiThinking) return;
 
+  const difficulty = getDifficulty();
   aiThinking = true;
   updateUi();
   setStatus("Computer is sizing up the skyline...");
@@ -2826,7 +2975,7 @@ function maybeQueueAiTurn() {
     aiThinking = false;
     updateUi();
     throwBanana(shot);
-  }, 650 + random() * 950);
+  }, difficulty.thinkingMin + random() * (difficulty.thinkingMax - difficulty.thinkingMin));
 }
 
 function launchPendingBanana(player) {
@@ -3045,6 +3194,10 @@ ui.modeToggle.addEventListener("click", () => {
   toggleModeFromControl();
 });
 
+ui.difficultyToggle.addEventListener("click", () => {
+  cycleDifficulty();
+});
+
 ui.aimToggle.addEventListener("click", () => {
   toggleAimAssist();
 });
@@ -3067,6 +3220,10 @@ ui.menuAimToggle.addEventListener("click", () => {
 
 ui.menuSoundToggle.addEventListener("click", () => {
   toggleSound();
+});
+
+ui.menuDifficultyToggle.addEventListener("click", () => {
+  cycleDifficulty();
 });
 
 ui.menuNewRoundButton.addEventListener("click", () => {
@@ -3109,6 +3266,7 @@ window.addEventListener("keydown", (event) => {
 
 loadSoundPreference();
 loadAimAssistPreference();
+loadDifficultyPreference();
 loadTouchTutorialPreference();
 resetRound(false);
 showTouchTutorialIfNeeded();

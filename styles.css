@@ -255,6 +255,13 @@ button:disabled {
   box-shadow: inset 0 -5px 0 rgba(2, 39, 73, 0.34);
 }
 
+#difficultyToggle,
+#menuDifficultyToggle {
+  color: #101821;
+  background: #7be3de;
+  box-shadow: inset 0 -5px 0 rgba(4, 84, 95, 0.34);
+}
+
 #aimToggle {
   color: #f6fbff;
   background: #8a5cf6;
@@ -503,54 +510,87 @@ button:disabled {
   .hud-shot {
     position: absolute;
     left: 50%;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    width: min(280px, calc(100% - 180px));
-    min-height: 44px;
-    padding: 5px 10px;
+    bottom: max(52px, calc(10% + env(safe-area-inset-bottom)));
+    width: clamp(250px, 38%, 360px);
+    min-height: clamp(44px, 9%, 62px);
+    padding: clamp(7px, 1.5%, 10px) clamp(14px, 2.2%, 20px);
     transform: translateX(-50%);
-    border: 1px solid rgba(123, 227, 222, 0.68);
+    border: 2px solid rgba(82, 223, 255, 0.92);
     background:
-      linear-gradient(180deg, rgba(21, 22, 54, 0.56), rgba(7, 11, 31, 0.46));
+      repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.045) 0,
+        rgba(255, 255, 255, 0.045) 1px,
+        transparent 1px,
+        transparent 4px
+      ),
+      linear-gradient(180deg, rgba(13, 18, 48, 0.9), rgba(5, 10, 31, 0.86));
     box-shadow:
-      0 4px 14px rgba(0, 0, 0, 0.18),
-      inset 0 0 0 1px rgba(255, 248, 216, 0.08);
+      0 0 0 1px rgba(6, 9, 28, 0.9),
+      0 0 14px rgba(82, 223, 255, 0.38),
+      0 8px 22px rgba(0, 0, 0, 0.28),
+      inset 0 0 0 1px rgba(210, 251, 255, 0.16),
+      inset 0 -8px 16px rgba(0, 0, 0, 0.2);
     color: #fff8d8;
     text-align: center;
     pointer-events: none;
   }
 
   .hud-shot.is-aiming {
-    min-height: 58px;
-    padding-bottom: 7px;
+    min-height: clamp(56px, 10%, 72px);
+    padding-bottom: clamp(8px, 1.5%, 11px);
   }
 
   .shot-readout {
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     align-items: center;
-    gap: 6px;
+    gap: clamp(9px, 3%, 16px);
+    min-height: 30px;
   }
 
-  .shot-stat span {
-    display: block;
+  .shot-stat {
+    white-space: nowrap;
+  }
+
+  .shot-stat > span {
+    display: inline-block;
+    margin-right: 7px;
     color: #a8e8ff;
-    font-size: 0.55rem;
+    font-size: clamp(0.56rem, 1.2vw, 0.74rem);
     font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0;
+    line-height: 1;
+    text-shadow:
+      0 0 6px rgba(82, 223, 255, 0.62),
+      0 1px 0 rgba(0, 0, 0, 0.82);
   }
 
   .shot-stat strong {
-    display: block;
+    display: inline-block;
     color: #ffe15b;
-    font-size: 1.45rem;
-    line-height: 1;
-    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+    font-size: clamp(1.18rem, 3vw, 1.78rem);
+    line-height: 0.9;
+    text-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.72),
+      0 0 8px rgba(255, 207, 70, 0.44);
+  }
+
+  .shot-stat strong span {
+    color: inherit;
+    font: inherit;
+    text-shadow: inherit;
   }
 
   .shot-divider {
-    color: rgba(255, 225, 91, 0.7);
-    font-size: 0.8rem;
+    width: 1px;
+    min-height: 28px;
+    overflow: hidden;
+    color: transparent;
+    background: linear-gradient(180deg, transparent, rgba(168, 232, 255, 0.72), transparent);
+    box-shadow: 0 0 8px rgba(82, 223, 255, 0.42);
+    font-size: 0;
     line-height: 1;
   }
 
@@ -607,13 +647,34 @@ button:disabled {
   }
 
   .pause-menu button:first-child,
-  .pause-menu button:nth-child(4) {
+  #menuNewRoundButton {
     grid-column: 1 / -1;
   }
 }
 
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 760px) {
   .hud-shot {
-    width: min(260px, calc(100% - 160px));
+    bottom: max(44px, calc(8% + env(safe-area-inset-bottom)));
+    width: clamp(220px, 36%, 300px);
+    min-height: 42px;
+    padding: 6px 12px;
+  }
+
+  .hud-shot.is-aiming {
+    min-height: 54px;
+  }
+
+  .shot-readout {
+    gap: 8px;
+    min-height: 28px;
+  }
+
+  .shot-stat > span {
+    margin-right: 5px;
+    font-size: 0.52rem;
+  }
+
+  .shot-stat strong {
+    font-size: 1.18rem;
   }
 }
