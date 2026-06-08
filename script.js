@@ -670,9 +670,16 @@ function dismissTouchTutorial() {
 
 function setPauseMenuOpen(open) {
   pauseMenuOpen = open;
+  if (!pauseMenuOpen && ui.pauseOverlay.contains(document.activeElement)) {
+    ui.menuButton.focus();
+  }
+  ui.pauseOverlay.inert = !pauseMenuOpen;
   ui.pauseOverlay.classList.toggle("is-open", pauseMenuOpen);
   ui.pauseOverlay.setAttribute("aria-hidden", String(!pauseMenuOpen));
   ui.menuButton.setAttribute("aria-expanded", String(pauseMenuOpen));
+  if (pauseMenuOpen) {
+    ui.resumeButton.focus();
+  }
 }
 
 function toggleAimAssist() {
