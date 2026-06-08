@@ -33,6 +33,7 @@ const ui = {
   hudP2Score: document.querySelector("#hudP2Score"),
   hudP2Name: document.querySelector("#hudP2Name"),
   hudWind: document.querySelector("#hudWind"),
+  hudShot: document.querySelector(".hud-shot"),
   hudAngle: document.querySelector("#hudAngle"),
   hudVelocity: document.querySelector("#hudVelocity"),
   hudPowerFill: document.querySelector("#hudPowerFill"),
@@ -1836,6 +1837,7 @@ function updateUi() {
   ui.hudP2Score.textContent = scores[1];
   ui.hudP2Name.textContent = singlePlayer ? "CPU" : "P2";
   ui.hudWind.textContent = `${wind < 0 ? "<-" : "->"} ${Math.abs(wind).toFixed(1)}`;
+  if (ui.hudShot) ui.hudShot.classList.toggle("is-aiming", pointerAim.isAiming);
   ui.hudAngle.textContent = ui.angle.value;
   ui.hudVelocity.textContent = ui.velocity.value;
   if (ui.hudPowerFill) {

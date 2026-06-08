@@ -519,57 +519,67 @@ button:disabled {
     position: absolute;
     left: 50%;
     bottom: max(10px, env(safe-area-inset-bottom));
-    width: min(360px, calc(100% - 180px));
-    min-height: 54px;
-    padding: 7px 12px 8px;
+    width: min(280px, calc(100% - 180px));
+    min-height: 44px;
+    padding: 5px 10px;
     transform: translateX(-50%);
-    border: 2px solid rgba(123, 227, 222, 0.82);
+    border: 1px solid rgba(123, 227, 222, 0.68);
     background:
-      linear-gradient(180deg, rgba(21, 22, 54, 0.84), rgba(7, 11, 31, 0.78));
+      linear-gradient(180deg, rgba(21, 22, 54, 0.56), rgba(7, 11, 31, 0.46));
     box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.28),
-      inset 0 0 0 1px rgba(255, 248, 216, 0.12);
+      0 4px 14px rgba(0, 0, 0, 0.18),
+      inset 0 0 0 1px rgba(255, 248, 216, 0.08);
     color: #fff8d8;
     text-align: center;
     pointer-events: none;
+  }
+
+  .hud-shot.is-aiming {
+    min-height: 58px;
+    padding-bottom: 7px;
   }
 
   .shot-readout {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
   }
 
   .shot-stat span {
     display: block;
     color: #a8e8ff;
-    font-size: 0.58rem;
+    font-size: 0.55rem;
     font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.03em;
   }
 
   .shot-stat strong {
     display: block;
     color: #ffe15b;
-    font-size: 1rem;
+    font-size: 1.45rem;
     line-height: 1;
     text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
   }
 
   .shot-divider {
-    color: #ffe15b;
-    font-size: 1.1rem;
+    color: rgba(255, 225, 91, 0.7);
+    font-size: 0.8rem;
     line-height: 1;
   }
 
   .power-meter {
-    height: 7px;
-    margin-top: 6px;
+    display: none;
+    height: 4px;
+    margin-top: 3px;
     overflow: hidden;
     border: 1px solid rgba(255, 248, 216, 0.24);
     background: rgba(0, 0, 0, 0.34);
+  }
+
+  .hud-shot.is-aiming .power-meter {
+    display: block;
   }
 
   .power-fill {
@@ -579,11 +589,16 @@ button:disabled {
   }
 
   .shot-hint {
+    display: none;
     margin-top: 4px;
     color: rgba(255, 248, 216, 0.82);
     font-size: 0.62rem;
     font-weight: 800;
     text-transform: uppercase;
+  }
+
+  .hud-shot.is-aiming .shot-hint {
+    display: block;
   }
 
   .menu-button {
@@ -614,10 +629,6 @@ button:disabled {
 
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 760px) {
   .hud-shot {
-    width: min(320px, calc(100% - 160px));
-  }
-
-  .shot-hint {
-    display: none;
+    width: min(260px, calc(100% - 160px));
   }
 }
